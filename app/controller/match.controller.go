@@ -43,41 +43,21 @@ func (c *MatchController) findMatch(path string, playerController *Controller[m.
 			HandleResponse(w, nil, err)
 			return
 		}
-		player, err := getPlayer(r, playerController)
+		table, err := getTable(r, tableController)
 		if err != nil {
 			socket.Write(response.Response{Message: err.Error()})
 			socket.Close()
 			return
 		}
-		if err := c.isSearchingForAMatch(player); err != nil {
-			socket.Write(response.Response{Message: err.Error()})
-			socket.Close()
-			return
-		}
-		tableName, err := strconv.Atoi(r.URL.Query().Get("table"))
+		playerMatchmaking, err := c.getPlayerMatchmaking(r, playerController, table)
 		if err != nil {
 			socket.Write(response.Response{Message: err.Error()})
 			socket.Close()
 			return
 		}
-		table, err := tableController.Store.FindOne(&m.Table{
-			Name: tableName,
-		}, nil)
-		if err != nil {
-			socket.Write(response.Response{Message: err.Error()})
-			socket.Close()
-			return
-		}
-		playerMatch, err := c.addPlayerToMatchWaitingList(player, table)
-		if err != nil {
-			socket.Write(response.Response{Message: err.Error()})
-			socket.Close()
-			return
-		}
-		socket.Write(response.Response{Message: "starting matchmaking"})
 		c.startMatchmaking(
 			r,
-			playerMatch,
+			playerMatchmaking,
 			table,
 			time.Duration(120*float64(time.Second)),
 			socket,
@@ -85,19 +65,45 @@ func (c *MatchController) findMatch(path string, playerController *Controller[m.
 	})
 }
 
-func (c *MatchController) startMatchmaking(r *http.Request, playerMatch *m.Match, table *m.Table, timeout time.Duration, socket *connection.WebSocket) {
-	fmt.Println("started matchmaking")
+func (c *MatchController) getPlayerMatchmaking(r *http.Request, playerController *Controller[m.Player], table *m.Table) (*m.Match, error) {
+	player, err := getPlayer(r, playerController)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.isSearchingForAMatch(player); err != nil {
+		return nil, err
+	}
+	playerMatch, err := c.addPlayerToMatchWaitingList(player, table)
+	if err != nil {
+		return nil, err
+	}
+	return playerMatch, nil
+}
+
+func getTable(r *http.Request, tableController *Controller[m.Table]) (*m.Table, error) {
+	tableName, err := strconv.Atoi(r.URL.Query().Get("table"))
+	if err != nil {
+		return nil, err
+	}
+	table, err := tableController.Store.FindOne(&m.Table{
+		Name: tableName,
+	}, nil)
+	return table, err
+}
+
+func (c *MatchController) startMatchmaking(r *http.Request, playerMatchmaking *m.Match, table *m.Table, timeout time.Duration, socket *connection.WebSocket) {
+	socket.Write(response.Response{Message: "starting matchmaking"})
 	matches := &[]m.Match{}
 	done := make(chan bool)
 	quit := make(chan bool)
 	clientInput := make(chan interface{})
 	socket.Listen(clientInput)
 
-	go c.isThereEnoughPeople(quit, done, playerMatch, table, matches)
+	go c.findAMatch(quit, done, playerMatchmaking, table, matches)
 	select {
 	//see this as user cancel
 	case <-clientInput:
-		err := c.deleteMatch(playerMatch)
+		err := c.deleteMatch(playerMatchmaking)
 		if err != nil {
 			socket.Write(err)
 		}
@@ -105,30 +111,30 @@ func (c *MatchController) startMatchmaking(r *http.Request, playerMatch *m.Match
 		done <- true
 	case <-done:
 		if len(*matches) == 0 {
-			if match, err := c.Store.AmIInAMatch(playerMatch); len(*match) == 1 && err == nil {
+			if match, err := c.Store.AmIInAMatch(playerMatchmaking); len(*match) == 1 && err == nil {
 				socket.Write(response.Response{Message: (*match)[0].Server})
 				socket.Close()
 				return
 			}
 			socket.Write(response.Response{Message: "matchmaking cancelled"})
 			socket.Close()
-			err := c.deleteMatch(playerMatch)
+			err := c.deleteMatch(playerMatchmaking)
 			if err != nil {
 				fmt.Println(err.Error())
 			}
 			quit <- true
 			return
 		}
-		ok := isMatchmakingComplete(matches, playerMatch, socket)
+		ok := isMatchmakingComplete(matches, playerMatchmaking, socket)
 		if ok {
 			quit <- true
 			return
 		}
 		quit <- true
-		c.startMatchmaking(r, playerMatch, table, timeout, socket)
+		c.startMatchmaking(r, playerMatchmaking, table, timeout, socket)
 	case <-time.After(timeout):
 		if len(*matches) >= *table.Min {
-			ok := isMatchmakingComplete(matches, playerMatch, socket)
+			ok := isMatchmakingComplete(matches, playerMatchmaking, socket)
 			if ok {
 				socket.Close()
 				quit <- true
@@ -137,7 +143,7 @@ func (c *MatchController) startMatchmaking(r *http.Request, playerMatch *m.Match
 			socket.Write(response.Response{Message: "impossible to find a match"})
 			socket.Close()
 		} else {
-			err := c.deleteMatch(playerMatch)
+			err := c.deleteMatch(playerMatchmaking)
 			if err != nil {
 				socket.Write(response.Response{Message: err.Error()})
 			} else {
@@ -165,7 +171,7 @@ func (c *MatchController) deleteMatch(match *m.Match) error {
 	return err
 }
 
-func (c *MatchController) isThereEnoughPeople(quit chan bool, done chan bool, playerMatch *m.Match, table *m.Table, matches *[]m.Match) {
+func (c *MatchController) findAMatch(quit chan bool, done chan bool, playerMatch *m.Match, table *m.Table, matches *[]m.Match) {
 	var err error
 	for {
 		select {
@@ -183,7 +189,6 @@ func (c *MatchController) isThereEnoughPeople(quit chan bool, done chan bool, pl
 				done <- false
 				return
 			}
-			// If enough players have been found, stop the matchmaking
 			if len(*matches) >= *table.Min {
 				fmt.Println("found a match")
 				matchStore := store.MatchStore(*c.Store)
