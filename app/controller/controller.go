@@ -201,6 +201,7 @@ func (controller *Controller[T]) DeleteMultiple(path string, preload *[]string, 
 
 func HandleResponse(w http.ResponseWriter, response interface{}, err error) {
 	if err != nil {
+		fmt.Println(err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

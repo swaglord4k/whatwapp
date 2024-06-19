@@ -15,7 +15,11 @@ const (
 	MysqlConfig    ConfigType = "mysql"
 )
 
-type Conf struct {
+type ServerConf struct {
+	Port int `yaml:"SERVER_PORT"`
+}
+
+type DatabaseConf struct {
 	Host     string `yaml:"HOST"`
 	User     string `yaml:"USER"`
 	Password string `yaml:"PASSWORD"`
@@ -23,16 +27,32 @@ type Conf struct {
 	Port     int16  `yaml:"PORT"`
 }
 
-func (c *Conf) GetConf(configType ConfigType) *Conf {
+func GetDatabaseConf(configType ConfigType) *DatabaseConf {
+	dbConf := &DatabaseConf{}
 	directory, _ := os.Getwd()
 	yamlFile, err := os.ReadFile(directory + fmt.Sprintf("/config/conf.%s.yaml", configType))
 	if err != nil {
 		log.Printf("yamlFile.Get err   #%v ", err)
 	}
-	err = yaml.Unmarshal(yamlFile, c)
+	err = yaml.Unmarshal(yamlFile, dbConf)
 	if err != nil {
 		log.Fatalf("Unmarshal: %v", err)
 	}
 
-	return c
+	return dbConf
+}
+
+func GetServerConf() *ServerConf {
+	serverConf := &ServerConf{}
+	directory, _ := os.Getwd()
+	yamlFile, err := os.ReadFile(directory + "/config/conf.yaml")
+	if err != nil {
+		log.Printf("yamlFile.Get err   #%v ", err)
+	}
+	err = yaml.Unmarshal(yamlFile, serverConf)
+	if err != nil {
+		log.Fatalf("Unmarshal: %v", err)
+	}
+
+	return serverConf
 }

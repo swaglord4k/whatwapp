@@ -15,7 +15,7 @@ import (
 type MatchController Controller[m.Match]
 
 func CreateMatchApi(c *Controller[m.Match], playerController *Controller[m.Player], tableController *Controller[m.Table]) {
-	fmt.Println("")
+	fmt.Println()
 	matchController := MatchController(*c)
 	root := fmt.Sprintf("/%s", c.model)
 

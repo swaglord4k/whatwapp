@@ -8,8 +8,7 @@ import (
 )
 
 func ConnectToDB(confType m.ConfigType) (*gorm.DB, error) {
-	var configs m.Conf
-	configs.GetConf(confType)
+	configs := m.GetDatabaseConf(confType)
 	switch confType {
 	case m.MysqlConfig:
 		return ConnectToMySQLDb(configs)

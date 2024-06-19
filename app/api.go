@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 
@@ -29,5 +30,11 @@ func NewApp() {
 	c.CreateMatchApi(match, player, table)
 	c.CreateUserApi(user)
 
-	log.Fatal(http.ListenAndServe(":8080", router))
+	conf := m.GetServerConf()
+	fmt.Println()
+	fmt.Println("API created")
+	fmt.Printf("STARTING SERVER on port %d", conf.Port)
+	fmt.Println()
+
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", conf.Port), router))
 }
