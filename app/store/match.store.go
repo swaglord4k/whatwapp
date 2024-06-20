@@ -20,7 +20,7 @@ func (store *Store[T]) FindMatch(match *m.Match) (*[]m.Match, error) {
 	return &matches, result.Error
 }
 
-func (store *Store[T]) AmIInAMatch(match *m.Match) (*[]m.Match, error) {
+func (store *Store[T]) GetPlayerMatch(match *m.Match) (*[]m.Match, error) {
 	var matches []m.Match
 	result := store.DB.Debug().Table(store.TableName).Where(
 		"player_id = ? AND deleted_at IS NULL AND server IS NOT NULL", match.PlayerId,
@@ -41,7 +41,7 @@ func getMatchParmeters(match *m.Match) (int, int, int) {
 	return minLeague, maxLeague, match.TableName
 }
 
-func (matchStore *MatchStore) SetServerForMatch(match *m.Match, table *m.Table) (*[]m.Match, error) {
+func (matchStore *MatchStore) SetGameForMatch(match *m.Match, table *m.Table) (*[]m.Match, error) {
 	store := Store[m.Match](*matchStore)
 	var matches *[]m.Match
 	err := matchStore.DB.Transaction(func(tx *gorm.DB) error {
@@ -67,7 +67,7 @@ func (matchStore *MatchStore) SetServerForMatch(match *m.Match, table *m.Table) 
 			matches = tmp
 		}
 		var server *m.Server
-		tx.Debug().Table(m.SERVER_MODEL).Order("created_at asc").First(&server)
+		tx.Debug().Table(m.GAME_MODEL).Order("created_at asc").First(&server)
 		if server == nil {
 			fmt.Println("error at find serer")
 			return fmt.Errorf("no server available")

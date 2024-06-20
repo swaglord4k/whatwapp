@@ -34,7 +34,7 @@ func CreateMatchApi(c *Controller[m.Match], playerController *Controller[m.Playe
 //	@Failure		400	{object}	interface{}
 //	@Failure		404	{object}	interface{}
 //	@Failure		500	{object}	interface{}
-//	@Router			/match/find [get]
+//	@Router			/matches/find [get]
 func (c *MatchController) findMatch(path string, playerController *Controller[m.Player], tableController *Controller[m.Table]) {
 	fmt.Println("GET", path)
 	c.router.Get(path, func(w http.ResponseWriter, r *http.Request) {
@@ -92,14 +92,15 @@ func getTable(r *http.Request, tableController *Controller[m.Table]) (*m.Table, 
 }
 
 func (c *MatchController) startMatchmaking(r *http.Request, playerMatchmaking *m.Match, table *m.Table, timeout time.Duration, socket *connection.WebSocket) {
-	socket.Write(response.Response{Message: "starting matchmaking"})
-	matches := &[]m.Match{}
+
 	done := make(chan bool)
 	quit := make(chan bool)
 	clientInput := make(chan interface{})
+
+	socket.Write(response.Response{Message: "starting matchmaking"})
 	socket.Listen(clientInput)
 
-	go c.findAMatch(quit, done, playerMatchmaking, table, matches)
+	go c.findAMatch(quit, done, playerMatchmaking, table, socket)
 	select {
 	//see this as user cancel
 	case <-clientInput:
@@ -108,62 +109,24 @@ func (c *MatchController) startMatchmaking(r *http.Request, playerMatchmaking *m
 			socket.Write(err)
 		}
 		quit <- true
-		done <- true
 	case <-done:
-		if len(*matches) == 0 {
-			if match, err := c.Store.AmIInAMatch(playerMatchmaking); len(*match) == 1 && err == nil {
-				socket.Write(response.Response{Message: (*match)[0].Server})
-				socket.Close()
-				return
-			}
-			socket.Write(response.Response{Message: "matchmaking cancelled"})
+		if match, err := c.Store.GetPlayerMatch(playerMatchmaking); len(*match) == 1 && err == nil {
+			socket.Write(response.Response{Message: (*match)[0].Server})
 			socket.Close()
-			err := c.deleteMatch(playerMatchmaking)
-			if err != nil {
-				fmt.Println(err.Error())
-			}
-			quit <- true
 			return
-		}
-		ok := isMatchmakingComplete(matches, playerMatchmaking, socket)
-		if ok {
-			quit <- true
-			return
-		}
-		quit <- true
-		c.startMatchmaking(r, playerMatchmaking, table, timeout, socket)
-	case <-time.After(timeout):
-		if len(*matches) >= *table.Min {
-			ok := isMatchmakingComplete(matches, playerMatchmaking, socket)
-			if ok {
-				socket.Close()
-				quit <- true
-				return
-			}
-			socket.Write(response.Response{Message: "impossible to find a match"})
-			socket.Close()
 		} else {
-			err := c.deleteMatch(playerMatchmaking)
-			if err != nil {
-				socket.Write(response.Response{Message: err.Error()})
-			} else {
-				socket.Write(response.Response{Message: "matchmaking timed out"})
-			}
-			socket.Close()
-			quit <- true
+			c.startMatchmaking(r, playerMatchmaking, table, timeout, socket)
 		}
-	}
-}
-
-func isMatchmakingComplete(matches *[]m.Match, playerMatch *m.Match, socket *connection.WebSocket) bool {
-	for _, match := range *matches {
-		if match.PlayerId == playerMatch.ID {
-			socket.Write(match.Server)
-			socket.Close()
-			return true
+	case <-time.After(timeout):
+		err := c.deleteMatch(playerMatchmaking)
+		if err != nil {
+			socket.Write(response.Response{Message: err.Error()})
+		} else {
+			socket.Write(response.Response{Message: "matchmaking timed out"})
 		}
+		socket.Close()
+		quit <- true
 	}
-	return false
 }
 
 func (c *MatchController) deleteMatch(match *m.Match) error {
@@ -171,19 +134,19 @@ func (c *MatchController) deleteMatch(match *m.Match) error {
 	return err
 }
 
-func (c *MatchController) findAMatch(quit chan bool, done chan bool, playerMatch *m.Match, table *m.Table, matches *[]m.Match) {
-	var err error
+func (c *MatchController) findAMatch(quit chan bool, done chan bool, playerMatch *m.Match, table *m.Table, socket *connection.WebSocket) {
 	for {
 		select {
 		case <-quit:
 			return
 		default:
-			fmt.Println("searching for a match")
-			if match, err := c.Store.AmIInAMatch(playerMatch); len(*match) == 1 && err == nil {
+			socket.Write(response.Response{Message: "searching match"})
+			if match, err := c.Store.GetPlayerMatch(playerMatch); len(*match) == 1 && err == nil {
 				fmt.Println("I am in match. Joining")
 				done <- true
+				return
 			}
-			matches, err = c.Store.FindMatch(playerMatch)
+			matches, err := c.Store.FindMatch(playerMatch)
 			if err != nil {
 				fmt.Println(err.Error())
 				done <- false
@@ -192,7 +155,7 @@ func (c *MatchController) findAMatch(quit chan bool, done chan bool, playerMatch
 			if len(*matches) >= *table.Min {
 				fmt.Println("found a match")
 				matchStore := store.MatchStore(*c.Store)
-				matches, _ = matchStore.SetServerForMatch(playerMatch, table)
+				matchStore.SetGameForMatch(playerMatch, table)
 				done <- true
 				return
 			}
