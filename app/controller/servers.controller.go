@@ -6,12 +6,11 @@ import (
 	m "de.whatwapp/app/model"
 )
 
-func CreateTableApi(c *Controller[m.Table]) {
+func CreateServerApi(c *Controller[m.Server]) {
 	fmt.Println()
 	root := fmt.Sprintf("/%s", c.model)
 
 	c.Create(root)
-	c.Update(root)
 	c.Delete(root, nil)
 
 	c.updateDB()

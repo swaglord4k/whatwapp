@@ -10,4 +10,5 @@ type Match struct {
 	TableName int   `json:"tableName" db:"table"`
 	League    *int  `json:"league" db:"league"`
 	Server    *uint `json:"server" db:"server"`
+	Playing   bool  `json:"playing" db:"playing"`
 }

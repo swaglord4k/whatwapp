@@ -10,9 +10,12 @@ import (
 	m "de.whatwapp/app/model"
 	"de.whatwapp/app/model/response"
 	"de.whatwapp/app/store"
+	"github.com/davecgh/go-spew/spew"
 )
 
 type MatchController Controller[m.Match]
+
+const timeoutInSeconds = 30
 
 func CreateMatchApi(c *Controller[m.Match], playerController *Controller[m.Player], tableController *Controller[m.Table]) {
 	fmt.Println()
@@ -59,7 +62,7 @@ func (c *MatchController) findMatch(path string, playerController *Controller[m.
 			r,
 			playerMatchmaking,
 			table,
-			time.Duration(120*float64(time.Second)),
+			time.Duration(timeoutInSeconds*float64(time.Second)),
 			socket,
 		)
 	})
@@ -110,14 +113,16 @@ func (c *MatchController) startMatchmaking(r *http.Request, playerMatchmaking *m
 		}
 		quit <- true
 	case <-done:
-		if match, err := c.Store.GetPlayerMatch(playerMatchmaking); len(*match) == 1 && err == nil {
-			socket.Write(response.Response{Message: (*match)[0].Server})
-			socket.Close()
+		shouldStopMathmaking := StopMatchmakingIfPossible(c, playerMatchmaking, table, socket)
+		if shouldStopMathmaking {
 			return
-		} else {
-			c.startMatchmaking(r, playerMatchmaking, table, timeout, socket)
 		}
+		c.startMatchmaking(r, playerMatchmaking, table, timeout, socket)
 	case <-time.After(timeout):
+		shouldStopMathmaking := StopMatchmakingIfPossible(c, playerMatchmaking, table, socket)
+		if shouldStopMathmaking {
+			return
+		}
 		err := c.deleteMatch(playerMatchmaking)
 		if err != nil {
 			socket.Write(response.Response{Message: err.Error()})
@@ -127,6 +132,20 @@ func (c *MatchController) startMatchmaking(r *http.Request, playerMatchmaking *m
 		socket.Close()
 		quit <- true
 	}
+}
+
+func StopMatchmakingIfPossible(c *MatchController, playerMatchmaking *m.Match, table *m.Table, socket *connection.WebSocket) bool {
+	if match, err := c.Store.GetPlayerMatch(playerMatchmaking); len(*match) == 1 && err == nil {
+		err := c.Store.CompleteMatchIfPossible(playerMatchmaking, table)
+		if err != nil {
+			socket.Write(response.Response{Message: err.Error()})
+		} else {
+			socket.Write(response.Response{Message: (*match)[0].Server})
+		}
+		socket.Close()
+		return true
+	}
+	return false
 }
 
 func (c *MatchController) deleteMatch(match *m.Match) error {
@@ -146,18 +165,23 @@ func (c *MatchController) findAMatch(quit chan bool, done chan bool, playerMatch
 				done <- true
 				return
 			}
-			matches, err := c.Store.FindMatch(playerMatch)
+			playersForMatch, err := c.Store.FindPlayersForMatch(playerMatch)
+			fmt.Printf("player: %d\n", playerMatch.PlayerId)
+			fmt.Println("players for match")
+			spew.Dump(playersForMatch)
 			if err != nil {
 				fmt.Println(err.Error())
 				done <- false
 				return
 			}
-			if len(*matches) >= *table.Min {
-				fmt.Println("found a match")
+			if len(*playersForMatch) > 0 {
 				matchStore := store.MatchStore(*c.Store)
-				matchStore.SetGameForMatch(playerMatch, table)
-				done <- true
-				return
+				err := matchStore.SetGameForMatch(playerMatch, table)
+				if err == nil {
+					done <- true
+					return
+				}
+				fmt.Println(err)
 			}
 			time.Sleep(1 * time.Second)
 		}

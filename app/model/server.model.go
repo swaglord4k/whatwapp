@@ -2,7 +2,7 @@ package model
 
 import "gorm.io/gorm"
 
-const GAME_MODEL = "games"
+const SERVER_MODEL = "servers"
 
 type Server struct {
 	gorm.Model
