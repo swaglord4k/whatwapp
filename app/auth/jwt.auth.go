@@ -37,7 +37,10 @@ func GetRoleFromToken(tokenString string) (*model.Role, error) {
 		return nil, fmt.Errorf("claims not present")
 	}
 	var bytes []byte
-	claimsString.UnmarshalJSON(bytes)
+	err = claimsString.UnmarshalJSON(bytes)
+	if err != nil {
+		return nil, err
+	}
 	role := model.Role(string(bytes))
 	return &role, nil
 }

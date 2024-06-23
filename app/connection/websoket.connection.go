@@ -33,7 +33,10 @@ func (s *WebSocket) Close() {
 }
 
 func (s *WebSocket) Write(response interface{}) {
-	s.socket.WriteJSON(response)
+	err := s.socket.WriteJSON(response)
+	if err != nil {
+		fmt.Println(err)
+	}
 }
 
 func (s *WebSocket) Listen(channel chan interface{}) {

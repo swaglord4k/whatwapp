@@ -28,7 +28,10 @@ func NewController[T m.Model](database *gorm.DB, router *chi.Mux, model string) 
 
 func (controller *Controller[T]) updateDB() {
 	var m T
-	controller.Store.DB.AutoMigrate(m)
+	err := controller.Store.DB.AutoMigrate(m)
+	if err != nil {
+		fmt.Println(err)
+	}
 }
 
 // Create godoc
